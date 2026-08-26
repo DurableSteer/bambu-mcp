@@ -1,0 +1,70 @@
+{
+  "failureProbability": 0.15,
+  "loop": true,
+  "terminalStateSeconds": 20,
+  "printers": {
+    "printer-a": {
+      "jobs": [
+        {
+          "file": "gearbox_case.3mf",
+          "modelsPerPlate": 6,
+          "printTimeMinutes": 12,
+          "runs": 2,
+          "result": "auto"
+        },
+        {
+          "type": "idle",
+          "idleMinutes": 2
+        },
+        {
+          "file": "motor_mount.3mf",
+          "modelsPerPlate": 8,
+          "printTimeMinutes": 9,
+          "runs": 1,
+          "result": "auto"
+        }
+      ]
+    },
+    "printer-b": {
+      "jobs": [
+        {
+          "file": "gear_small.3mf",
+          "modelsPerPlate": 16,
+          "printTimeMinutes": 7,
+          "runs": 3,
+          "result": "auto"
+        },
+        {
+          "file": "gear_large.3mf",
+          "modelsPerPlate": 10,
+          "printTimeMinutes": 10,
+          "runs": 1,
+          "result": "success"
+        }
+      ]
+    },
+    "printer-c": {
+      "jobs": [
+        {
+          "file": "demo_fixture.3mf",
+          "modelsPerPlate": 4,
+          "printTimeMinutes": 15,
+          "runs": 1,
+          "result": "auto"
+        },
+        {
+          "type": "idle",
+          "idleMinutes": 3
+        },
+        {
+          "file": "demo_cover.3mf",
+          "modelsPerPlate": 5,
+          "printTimeMinutes": 8,
+          "runs": 2,
+          "result": "failed",
+          "failAtPercent": 63
+        }
+      ]
+    }
+  }
+}

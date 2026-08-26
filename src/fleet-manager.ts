@@ -1,5 +1,7 @@
 import { BambuMQTTClient } from "./mqtt-client.js";
-import type { PrinterConfig, PrinterStatus } from "./types.js";
+import { SimulatedPrinterClient } from "./simulated-printer-client.js";
+import { isSimulationEnabled } from "./simulation-config.js";
+import type { PrinterConfig } from "./types.js";
 
 export interface PrinterConnection {
   config: PrinterConfig;
@@ -10,20 +12,21 @@ export class FleetManager {
   private printers: Map<string, PrinterConnection> = new Map();
 
   async connectPrinter(config: PrinterConfig): Promise<void> {
-    // Disconnect existing connection if re-adding
     const existing = this.printers.get(config.id);
     if (existing) {
       existing.mqtt.disconnect();
     }
 
-    const mqttClient = new BambuMQTTClient({
-      host: config.host,
-      port: 8883,
-      username: "bblp",
-      password: config.accessCode,
-      deviceId: config.serialNumber,
-      model: config.model,
-    });
+    const mqttClient: BambuMQTTClient = isSimulationEnabled()
+      ? new SimulatedPrinterClient(config)
+      : new BambuMQTTClient({
+          host: config.host,
+          port: 8883,
+          username: "bblp",
+          password: config.accessCode,
+          deviceId: config.serialNumber,
+          model: config.model,
+        });
 
     await mqttClient.connect();
     this.printers.set(config.id, { config, mqtt: mqttClient });
@@ -64,13 +67,6 @@ export class FleetManager {
     return this.printers.size;
   }
 
-  /**
-   * Resolve target printer(s) from user input.
-   * - "all" → all printers
-   * - specific id → that printer
-   * - undefined with one printer → that printer
-   * - undefined with multiple → error listing available IDs
-   */
   resolvePrinters(target?: string): PrinterConnection[] {
     if (target === "all") {
       const all = this.getAllPrinters();
@@ -102,9 +98,6 @@ export class FleetManager {
     );
   }
 
-  /**
-   * Execute an operation on one or more printers and format the results.
-   */
   async executeOnPrinters(
     target: string | undefined,
     fn: (conn: PrinterConnection) => Promise<string>,

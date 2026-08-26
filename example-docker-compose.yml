@@ -1,0 +1,9 @@
+services:
+  bambu-mcp-sim:
+    build: .
+    ports:
+      - "8080:8080"
+    volumes:
+      - ./config/printers.json:/home/node/.bambu-mcp/printers.json:ro
+      - ./config/simulation.json:/home/node/.bambu-mcp/simulation.json:ro
+    restart: unless-stopped

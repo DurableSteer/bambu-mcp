@@ -1,0 +1,28 @@
+{
+  "printers": [
+    {
+      "id": "printer-a",
+      "name": "Demo P1S A",
+      "host": "127.0.0.1",
+      "accessCode": "00000000",
+      "serialNumber": "01PDEMO00000001",
+      "model": "P1S"
+    },
+    {
+      "id": "printer-b",
+      "name": "Demo P1S B",
+      "host": "127.0.0.1",
+      "accessCode": "00000000",
+      "serialNumber": "01PDEMO00000002",
+      "model": "P1S"
+    },
+    {
+      "id": "printer-c",
+      "name": "Demo A1 Mini C",
+      "host": "127.0.0.1",
+      "accessCode": "00000000",
+      "serialNumber": "030DEMO00000003",
+      "model": "A1 Mini"
+    }
+  ]
+}
