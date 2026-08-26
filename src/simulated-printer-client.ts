@@ -24,7 +24,7 @@ interface RuntimeState {
 
 export class SimulatedPrinterClient extends BambuMQTTClient {
   private readonly printer: PrinterConfig;
-  private connected = false;
+  private simulatedConnected = false;
   private readonly plan: SimulationJob[];
   private readonly failureProbability: number;
   private readonly loop: boolean;
@@ -70,7 +70,7 @@ export class SimulatedPrinterClient extends BambuMQTTClient {
   }
 
   async connect(): Promise<void> {
-    this.connected = true;
+    this.simulatedConnected = true;
     this.state = {
       phase: "idle",
       cursor: 0,
@@ -83,11 +83,11 @@ export class SimulatedPrinterClient extends BambuMQTTClient {
   }
 
   disconnect(): void {
-    this.connected = false;
+    this.simulatedConnected = false;
   }
 
   isConnected(): boolean {
-    return this.connected;
+    return this.simulatedConnected;
   }
 
   private startCurrentPhase(now: number): void {
