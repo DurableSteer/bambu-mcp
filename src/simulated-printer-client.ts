@@ -192,7 +192,7 @@ export class SimulatedPrinterClient extends BambuMQTTClient {
     }
   }
 
-  private baseStatus(): PrinterStatus {
+  private baseStatus(now: number): PrinterStatus {
     return {
       print_type: "local",
       nozzle_temper: 35,
@@ -210,6 +210,7 @@ export class SimulatedPrinterClient extends BambuMQTTClient {
       lights_report: [{ node: "chamber_light", mode: "on" }],
       print_error: 0,
       hw_switch_state: 0,
+      ams: this.buildAms(now),
       ipcam: {
         ipcam_record: "disable",
         timelapse: "disable",
@@ -218,65 +219,102 @@ export class SimulatedPrinterClient extends BambuMQTTClient {
     };
   }
 
-  getCachedStatus(): PrinterStatus {
-    const now = Date.now();
-    this.advance(now);
+  private hashString(input: string): number {
+    let h = 0x811c9dc5;
+    for (let i = 0; i < input.length; i++) {
+      h ^= input.charCodeAt(i);
+      h = Math.imul(h, 0x01000193);
+    }
+    return h >>> 0;
+  }
 
-    const status: PrinterStatus = this.baseStatus();
+  /**
+   * Deterministic ambient relative humidity (%RH) at wall-clock time `now`,
+   * derived only from the printer ID and the timestamp. Like print progress,
+   * the curve advances in real time with Date.now() and needs no timer.
+   *
+   * Shape of a ventilated room:
+   * - diurnal cycle peaking around 06:00, bottoming out mid-afternoon,
+   * - a slow multi-day "weather" drift (3-7 days, unique per printer),
+   * - small faster fluctuations (~2h period) for door/ventilation bursts,
+   * - clamped to a plausible indoor range of 20-70%.
+   */
+  private moisturePercent(now: number): number {
+    const seed = this.hashString(this.printer.id);
+    const unit = (salt: number): number =>
+      ((Math.imul(seed ^ Math.imul(salt, 0x9e3779b1), 0x85ebca6b) >>> 13) % 10_000) / 10_000;
+
+    const d = new Date(now);
+    const hourFrac = d.getHours() + d.getMinutes() / 60 + d.getSeconds() / 3600;
+    const diurnal = Math.cos((2 * Math.PI * (hourFrac - 6)) / 24);
+
+    const driftPeriodMs = (3 + unit(2) * 4) * 86_400_000;
+    const drift = Math.sin((2 * Math.PI * now) / driftPeriodMs + unit(3) * 2 * Math.PI);
+
+    const flutter = Math.sin((2 * Math.PI * now) / (2 * 3_600_000) + unit(4) * 2 * Math.PI);
+
+    const value = 45 + 6 * diurnal + 4 * drift + 1.5 * flutter;
+    return Math.min(70, Math.max(20, value));
+  }
+
+  private amsTempC(now: number): number {
+    const d = new Date(now);
+    const hourFrac = d.getHours() + d.getMinutes() / 60;
+    return 24 + 2.5 * Math.cos((2 * Math.PI * (hourFrac - 15)) / 24);
+  }
+
+  private colorHex(colorName: string): string {
+    switch (colorName.trim().toLowerCase()) {
+      case "schwarz":
+        return "000000";
+      case "weiß":
+      case "weiss":
+        return "FFFFFF";
+      case "natur":
+        return "F0E7D8";
+      default:
+        return "CCCCCC";
+    }
+  }
+
+  /**
+   * Builds the ams.ams[] block, mirroring the real MQTT report structure from
+   * types.ts. While a job is active, tray 0 reflects the material from the
+   * job's file name (e.g. "2x(ABS, Schwarz) - ..."), like a real spool
+   * feeding the current print.
+   */
+  private buildAms(now: number): PrinterStatus["ams"] {
+    const trays = [
+      { id: "0", tray_type: "PLA", tray_color: "FFFFFF", remain: 88 },
+      { id: "1", tray_type: "PETG", tray_color: "000000", remain: 42 },
+      { id: "2", tray_type: "ABS", tray_color: "000000", remain: 71 },
+      { id: "3", tray_type: "PA12", tray_color: "F0E7D8", remain: 15 },
+    ];
+
     const current = this.state.current;
-
-    if (this.state.phase === "printing" && current && current.type !== "idle") {
-      const fullDurationMs = Math.max(1_000, current.printTimeMinutes * 60_000);
-      const elapsedMs = Math.max(0, now - this.state.phaseStartedAt);
-      const percent = Math.min(99, Math.max(0, Math.floor((elapsedMs / fullDurationMs) * 100)));
-      const totalLayers = Math.max(20, Math.round(current.printTimeMinutes * 3));
-
-      Object.assign(status, {
-        gcode_state: "RUNNING",
-        stg_cur: 0,
-        mc_percent: percent,
-        mc_remaining_time: Math.max(1, Math.ceil((fullDurationMs - elapsedMs) / 60_000)),
-        layer_num: Math.max(1, Math.floor((percent / 100) * totalLayers)),
-        total_layer_num: totalLayers,
-        subtask_name: current.file,
-        nozzle_temper: 220,
-        nozzle_target_temper: 220,
-        bed_temper: 60,
-        bed_target_temper: 60,
-        chamber_temper: 38,
-        cooling_fan_speed: "12",
-        heatbreak_fan_speed: "10",
-      });
-    } else if (this.state.phase === "terminal" && current && current.type !== "idle") {
-      const failed = this.state.outcome === "failed";
-      const terminalPercent = failed ? this.state.failAtPercent ?? 50 : 100;
-      const totalLayers = Math.max(20, Math.round(current.printTimeMinutes * 3));
-
-      Object.assign(status, {
-        gcode_state: failed ? "FAILED" : "FINISH",
-        stg_cur: -1,
-        mc_percent: terminalPercent,
-        mc_remaining_time: 0,
-        layer_num: Math.max(1, Math.floor((terminalPercent / 100) * totalLayers)),
-        total_layer_num: totalLayers,
-        subtask_name: current.file,
-        print_error: failed ? 1 : 0,
-      });
-    } else {
-      Object.assign(status, {
-        gcode_state: "IDLE",
-        stg_cur: -1,
-        mc_percent: 0,
-        mc_remaining_time: 0,
-        layer_num: 0,
-        total_layer_num: 0,
-      });
+    if (current && current.type !== "idle" && typeof current.file === "string") {
+      const match = /\(([^,()]+),\s*([^()]+)\)/.exec(current.file);
+      if (match) {
+        trays[0] = {
+          id: "0",
+          tray_type: match[1].trim(),
+          tray_color: this.colorHex(match[2]),
+          remain: trays[0].remain,
+        };
+      }
     }
 
     return {
-      ...status,
-      _cached_at: new Date(now).toISOString(),
-      _age_seconds: 0,
+      ams: [
+        {
+          id: "0",
+          humidity: String(Math.round(this.moisturePercent(now))),
+          temp: this.amsTempC(now).toFixed(1),
+          tray: trays,
+        },
+      ],
+      ams_exist_bits: "1",
+      tray_now: "0",
     };
   }
 
