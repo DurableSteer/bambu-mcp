@@ -322,6 +322,86 @@ export class SimulatedPrinterClient extends BambuMQTTClient {
     return this.getCachedStatus();
   }
 
+  /**
+   * Overrides the upstream cache lookup: in simulation there is no MQTT
+   * stream filling `lastStatus`, so the status is generated from the
+   * wall-clock-driven job state instead.
+   */
+  override getCachedStatus(): PrinterStatus {
+    const now = Date.now();
+    this.advance(now);
+
+    const current = this.state.current;
+    const status: PrinterStatus = this.baseStatus(now);
+
+    if (this.state.phase === "terminal") {
+      const failed = this.state.outcome === "failed";
+      const total = this.totalLayers(current);
+      return {
+        ...status,
+        gcode_state: failed ? "FAILED" : "FINISH",
+        subtask_name:
+          current && current.type !== "idle" ? current.file : undefined,
+        mc_percent: failed ? (this.state.failAtPercent ?? 50) : 100,
+        mc_remaining_time: 0,
+        layer_num: failed
+          ? Math.round(((this.state.failAtPercent ?? 50) / 100) * total)
+          : total,
+        total_layer_num: total,
+        stg_cur: -1,
+        _cached_at: new Date(now).toISOString(),
+        _age_seconds: 0,
+      };
+    }
+
+    if (this.state.phase !== "printing" || !current || current.type === "idle") {
+      return {
+        ...status,
+        gcode_state: "IDLE",
+        stg_cur: -1,
+        _cached_at: new Date(now).toISOString(),
+        _age_seconds: 0,
+      };
+    }
+
+    const fullDurationMs = Math.max(1_000, current.printTimeMinutes * 60_000);
+    const finishFraction =
+      this.state.outcome === "failed"
+        ? (this.state.failAtPercent ?? 50) / 100
+        : 1;
+    const activeDurationMs = fullDurationMs * finishFraction;
+    const elapsedMs = Math.min(now - this.state.phaseStartedAt, activeDurationMs);
+    const percent = Math.floor((elapsedMs / fullDurationMs) * 100);
+    const total = this.totalLayers(current);
+
+    return {
+      ...status,
+      gcode_state: "RUNNING",
+      subtask_name: current.file,
+      mc_percent: percent,
+      mc_remaining_time: Math.ceil((fullDurationMs - elapsedMs) / 60_000),
+      layer_num: Math.max(1, Math.round((percent / 100) * total)),
+      total_layer_num: total,
+      stg_cur: 0,
+      nozzle_temper: 220,
+      nozzle_target_temper: 220,
+      bed_temper: 60,
+      bed_target_temper: 60,
+      chamber_temper: 35,
+      big_fan1_speed: "15",
+      cooling_fan_speed: "80",
+      _cached_at: new Date(now).toISOString(),
+      _age_seconds: 0,
+    };
+  }
+
+  /** Stable pseudo-random layer count per job file, so layer numbers
+   * don't jump between polls. */
+  private totalLayers(job: SimulationJob | undefined): number {
+    if (!job || job.type === "idle" || typeof job.file !== "string") return 0;
+    return 40 + (this.hashString(job.file) % 160);
+  }
+
   async getVersion(): Promise<any> {
     return {
       command: "get_version",
