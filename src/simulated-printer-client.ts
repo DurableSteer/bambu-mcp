@@ -279,9 +279,14 @@ export class SimulatedPrinterClient extends BambuMQTTClient {
 
   /**
    * Builds the ams.ams[] block, mirroring the real MQTT report structure from
-   * types.ts. While a job is active, tray 0 reflects the material from the
-   * job's file name (e.g. "2x(ABS, Schwarz) - ..."), like a real spool
-   * feeding the current print.
+   * types.ts. Trays represent the physically loaded spools (RFID-identified).
+   *
+   * While a job is active, the slot feeding the print is derived
+   * deterministically from the file name and normally holds a spool matching
+   * the planned material parsed from the file name. A job may optionally
+   * specify `loadedFilament` in simulation.json to simulate an operator
+   * loading the wrong spool — the planned-vs-loaded comparison in the
+   * dashboard will then flag a mismatch.
    */
   private buildAms(now: number): PrinterStatus["ams"] {
     const trays = [
@@ -295,11 +300,37 @@ export class SimulatedPrinterClient extends BambuMQTTClient {
     if (current && current.type !== "idle" && typeof current.file === "string") {
       const match = /\(([^,()]+),\s*([^()]+)\)/.exec(current.file);
       if (match) {
-        trays[0] = {
-          id: "0",
-          tray_type: match[1].trim(),
-          tray_color: this.colorHex(match[2]),
-          remain: trays[0].remain,
+        const plannedMaterial = match[1].trim();
+        const plannedColorHex = this.colorHex(match[2]);
+
+        // Optional per-job override; not declared in simulation-config.ts,
+        // hence the intersection cast. If you add
+        // `loadedFilament?: string;` to the print-job interface in
+        // simulation-config.ts, the cast can be dropped.
+        const job = current as SimulationJob & { loadedFilament?: string };
+        const loadedFilament = job.loadedFilament?.trim() || null;
+
+        // Feeding slot stays constant for the whole job.
+        const slot = this.hashString(current.file) % trays.length;
+
+        trays[slot] = {
+          id: String(slot),
+          tray_type: loadedFilament ?? plannedMaterial,
+          tray_color: plannedColorHex,
+          remain: trays[slot].remain,
+        };
+
+        return {
+          ams: [
+            {
+              id: "0",
+              humidity: String(Math.round(this.moisturePercent(now))),
+              temp: this.amsTempC(now).toFixed(1),
+              tray: trays,
+            },
+          ],
+          ams_exist_bits: "1",
+          tray_now: String(slot),
         };
       }
     }
@@ -317,7 +348,6 @@ export class SimulatedPrinterClient extends BambuMQTTClient {
       tray_now: "0",
     };
   }
-
   async requestStatus(): Promise<PrinterStatus> {
     return this.getCachedStatus();
   }
