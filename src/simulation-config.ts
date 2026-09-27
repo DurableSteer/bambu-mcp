@@ -12,6 +12,12 @@ export interface SimulatedPrintJob {
   runs?: number;
   result?: SimulatedResult;
   failAtPercent?: number;
+  /**
+   * Material of the spool actually loaded in the feeding AMS slot,
+   * overriding the material parsed from the file name. Use this to
+   * simulate an operator loading the wrong (RFID-tagged) spool.
+   */
+  loadedFilament?: string;
 }
 
 export interface SimulatedIdleJob {

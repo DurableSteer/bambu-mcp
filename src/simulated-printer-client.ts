@@ -303,12 +303,8 @@ export class SimulatedPrinterClient extends BambuMQTTClient {
         const plannedMaterial = match[1].trim();
         const plannedColorHex = this.colorHex(match[2]);
 
-        // Optional per-job override; not declared in simulation-config.ts,
-        // hence the intersection cast. If you add
-        // `loadedFilament?: string;` to the print-job interface in
-        // simulation-config.ts, the cast can be dropped.
-        const job = current as SimulationJob & { loadedFilament?: string };
-        const loadedFilament = job.loadedFilament?.trim() || null;
+        // Optional per-job override to simulate a wrongly loaded spool.
+        const loadedFilament = current.loadedFilament?.trim() || null;
 
         // Feeding slot stays constant for the whole job.
         const slot = this.hashString(current.file) % trays.length;
