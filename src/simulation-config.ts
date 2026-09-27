@@ -20,10 +20,16 @@ export interface SimulatedPrintJob {
   loadedFilament?: string;
   /**
    * Color (hex, RRGGBB) of the spool actually loaded in the feeding
-   * AMS slot, overriding the color parsed from the file name. Use this
-   * to simulate a spool with the right material but the wrong color.
+   * AMS slot, overriding the color parsed from the file name. Use this to
+   * simulate a spool with the right material but the wrong color.
    */
   loadedColor?: string;
+  /**
+   * Forced failure cause for jobs with result "failed". If omitted, a
+   * cause is drawn from a weighted pool of realistic causes.
+   */
+  cause?: string;
+}
 }
 
 export interface SimulatedIdleJob {

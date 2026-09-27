@@ -20,7 +20,28 @@ interface RuntimeState {
   current?: SimulationJob;
   outcome?: Outcome;
   failAtPercent?: number;
+  failureCause?: string;
+  failureErrorCode?: number;
 }
+
+/**
+ * Weighted pool of simulated failure causes. Error codes are simulation-
+ * internal placeholders (9100 + index) — real printers report numeric
+ * print_error / HMS codes that would need decoding into causes.
+ */
+const SIMULATED_FAILURE_CAUSES: ReadonlyArray<{
+  cause: string;
+  weight: number;
+}> = [
+  { cause: "Filament runout", weight: 0.3 },
+  { cause: "Extruder clog", weight: 0.2 },
+  { cause: "Layer shift detected", weight: 0.15 },
+  { cause: "First-layer adhesion failure", weight: 0.15 },
+  { cause: "Nozzle temperature malfunction", weight: 0.1 },
+  { cause: "Spaghetti detected (AI inspection)", weight: 0.1 },
+];
+
+const SIMULATED_FAILURE_BASE_CODE = 9100;
 
 export class SimulatedPrinterClient extends BambuMQTTClient {
   private readonly printer: PrinterConfig;
@@ -140,6 +161,33 @@ export class SimulatedPrinterClient extends BambuMQTTClient {
           )
         : undefined;
 
+    // Pick a failure cause when the print is destined to fail, decided once
+    // at job start so it stays stable across polls.
+    let failureCause: string | undefined;
+    let failureErrorCode: number | undefined;
+    if (outcome === "failed") {
+      const forced = job.cause?.trim();
+      if (forced) {
+        failureCause = forced;
+      } else {
+        let roll = Math.random();
+        for (const entry of SIMULATED_FAILURE_CAUSES) {
+          roll -= entry.weight;
+          if (roll < 0) {
+            failureCause = entry.cause;
+            break;
+          }
+        }
+        failureCause ??=
+          SIMULATED_FAILURE_CAUSES[SIMULATED_FAILURE_CAUSES.length - 1]
+            .cause;
+      }
+      const causeIndex = SIMULATED_FAILURE_CAUSES.findIndex(
+        (c) => c.cause === failureCause,
+      );
+      failureErrorCode = SIMULATED_FAILURE_BASE_CODE + Math.max(0, causeIndex);
+    }
+
     this.state = {
       phase: "printing",
       cursor: this.state.cursor,
@@ -147,6 +195,8 @@ export class SimulatedPrinterClient extends BambuMQTTClient {
       current: job,
       outcome,
       failAtPercent,
+      failureCause,
+      failureErrorCode,
     };
   }
 
@@ -378,6 +428,14 @@ export class SimulatedPrinterClient extends BambuMQTTClient {
           : total,
         total_layer_num: total,
         stg_cur: -1,
+        // Simulation-extension field: human-readable failure cause. Real
+        // printers only report numeric print_error / HMS codes.
+        ...(failed && this.state.failureCause
+          ? {
+              print_error: this.state.failureErrorCode ?? 0,
+              _sim_failure_cause: this.state.failureCause,
+            }
+          : {}),
         _cached_at: new Date(now).toISOString(),
         _age_seconds: 0,
       };
