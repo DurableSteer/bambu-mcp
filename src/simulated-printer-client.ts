@@ -306,13 +306,16 @@ export class SimulatedPrinterClient extends BambuMQTTClient {
         // Optional per-job override to simulate a wrongly loaded spool.
         const loadedFilament = current.loadedFilament?.trim() || null;
 
+        // Optional per-job override to simulate a wrongly colored spool.
+        const loadedColor = current.loadedColor?.trim() || null;
+
         // Feeding slot stays constant for the whole job.
         const slot = this.hashString(current.file) % trays.length;
 
         trays[slot] = {
           id: String(slot),
           tray_type: loadedFilament ?? plannedMaterial,
-          tray_color: plannedColorHex,
+          tray_color: loadedColor ?? plannedColorHex,
           remain: trays[slot].remain,
         };
 

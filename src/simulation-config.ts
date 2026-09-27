@@ -18,6 +18,12 @@ export interface SimulatedPrintJob {
    * simulate an operator loading the wrong (RFID-tagged) spool.
    */
   loadedFilament?: string;
+  /**
+   * Color (hex, RRGGBB) of the spool actually loaded in the feeding
+   * AMS slot, overriding the color parsed from the file name. Use this
+   * to simulate a spool with the right material but the wrong color.
+   */
+  loadedColor?: string;
 }
 
 export interface SimulatedIdleJob {
