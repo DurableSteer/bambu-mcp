@@ -30,7 +30,6 @@ export interface SimulatedPrintJob {
    */
   cause?: string;
 }
-}
 
 export interface SimulatedIdleJob {
   type: "idle";
